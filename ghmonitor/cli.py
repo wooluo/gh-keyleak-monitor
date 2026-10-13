@@ -14,9 +14,33 @@ from .store import Store
 # 查询预设。注意网页端语法与 REST 接口差异极大（2026-10 实测，见 README 支持矩阵）：
 # path:*.json / path:.env 在 REST 全部 0 命中、括号 OR 分组直接 422、-path:*.md 静默无效，
 # 网页端的 path: 组合语法不能用于 REST；改用 language: 限定文件类型，实测有效。
+# 语句只是"召回入口"，误报由 scanner 的正则 + 熵 + 占位符过滤压掉。
 PRESETS = {
-    # 代码文件为主（默认）：真实密钥集中在深页，配合 --page-offset 5+ 使用
+    # 全类型默认：每类密钥选 1~2 条高频泄漏语句（默认值即覆盖全部支持类型）
     "default": [
+        # LLM API Key
+        '"sk-proj-" language:Python',
+        '"sk-ant-api03-" language:Python',
+        '"sk-or-v1-" language:JavaScript',
+        # GitHub Token
+        '"GITHUB_TOKEN=ghp_" language:Shell',
+        '"github_pat_" language:Shell',
+        # 云平台
+        '"aws_secret_access_key" language:INI',
+        '"AKIA" language:Shell',
+        '"AIzaSy" language:JavaScript',
+        '"AIzaSy" language:JSON',
+        # SaaS
+        '"sk_live_" language:Python',
+        '"xoxb-" language:JSON',
+        '"hooks.slack.com/services" language:Shell',
+        '"api.telegram.org/bot" language:Python',
+        # 私钥文件
+        '"BEGIN OPENSSH PRIVATE KEY" language:Shell',
+        '"BEGIN RSA PRIVATE KEY" language:Shell',
+    ],
+    # 只盯 OpenAI（原 default，覆盖 Python/Shell/JS 代码文件）
+    "openai": [
         '"sk-proj-" language:Python',
         '"OPENAI_API_KEY=sk-" language:Shell',
         '"sk-proj-" language:JavaScript',
@@ -41,8 +65,8 @@ def _add_search_args(p, with_interval=False):
     p.add_argument("-q", "--query", action="append", default=None,
                    help="自定义 GitHub 搜索语句，可重复指定；默认使用内置语句")
     p.add_argument("--preset", choices=sorted(PRESETS), default="default",
-                   help="查询预设: default=代码文件(Python/Shell/JS), "
-                        "config=配置文件(JSON/INI, 即网页端 path:*.json 等语法的 REST 近似)")
+                   help="查询预设: default=全类型(默认, 15 条语句), "
+                        "openai=只盯 OpenAI, config=配置文件(JSON/INI)")
     p.add_argument("--org", default=None, help="限定组织（推荐：监控自有组织，REST 实测有效）")
     p.add_argument("--user", default=None, help="限定用户")
     p.add_argument("--pages", type=int, default=2, help="每个查询抓取的页数（默认 2）")
@@ -63,8 +87,9 @@ def _add_search_args(p, with_interval=False):
 def build_parser():
     p = argparse.ArgumentParser(
         prog="ghmonitor",
-        description="GitHub OpenAI API Key 泄漏监测工具"
-                    "（仅用于授权安全监测、自有资产监控与负责任披露）")
+        description="GitHub 硬编码密钥泄漏监测工具"
+                    "（OpenAI/Anthropic/GitHub/AWS/Google/Stripe/Slack 等 16 类；"
+                    "仅用于授权安全监测、自有资产监控与负责任披露）")
     p.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     p.add_argument("--db", default=None, help="SQLite 数据库路径（默认 ./findings.db）")
     p.add_argument("--token", default=None,
@@ -122,11 +147,14 @@ def _run_verify(store):
     if not fps:
         print("没有待校验的密钥")
         return
-    print(f"校验 {len(fps)} 个密钥有效性（GET /v1/models，不消耗额度）...")
-    for fp, key in fps:
-        status = verify_key(key)
+    print(f"校验 {len(fps)} 个密钥有效性（各家只读端点，不产生副作用）...")
+    for fp, key, key_type in fps:
+        status = verify_key(key, key_type)
         store.mark_verified(fp, status)
-        print(f"  {fp} → {status}")
+        if status == "skip":
+            print(f"  {fp} [{key_type}] → skip（该类型不支持主动校验）")
+        else:
+            print(f"  {fp} [{key_type}] → {status}")
         time.sleep(0.5)
 
 

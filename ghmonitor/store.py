@@ -70,9 +70,9 @@ class Store:
 
     def unverified_fingerprints(self) -> list:
         rows = self.conn.execute(
-            "SELECT DISTINCT fingerprint, key_full FROM findings WHERE verified='' "
-            "ORDER BY first_seen").fetchall()
-        return [(r["fingerprint"], r["key_full"]) for r in rows]
+            "SELECT DISTINCT fingerprint, key_full, key_type FROM findings "
+            "WHERE verified='' ORDER BY first_seen").fetchall()
+        return [(r["fingerprint"], r["key_full"], r["key_type"]) for r in rows]
 
     def all(self) -> list:
         return self.conn.execute(
