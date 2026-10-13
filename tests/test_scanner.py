@@ -155,8 +155,9 @@ class TestVendorKeys(unittest.TestCase):
                           "google_api", "telegram_bot"])
 
     def test_vendor_placeholders(self):
-        # 教程占位符：低熵 / 示例词，全部拦截
-        for text in ('K="xoxb-1234AbCdEf-5678AbCdEf-aaaaaa"',
+        # 教程占位符：黑名单词 / 低熵，全部拦截
+        for text in ('K="xoxb-your-token-here-AbCdEfGhIjKlMnOpQrStUvWxYz0123456"',
+                     'K="xoxb-' + "a" * 40 + '"',
                      'K="ghp_' + "a" * 36 + '"',
                      "bot_token = 123456789:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"):
             self.assertEqual(scan_text(text), [], text)
